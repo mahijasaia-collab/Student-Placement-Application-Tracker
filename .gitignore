@@ -1,0 +1,5 @@
+target/
+applications.dat
+*.class
+.idea/
+.vscode/
