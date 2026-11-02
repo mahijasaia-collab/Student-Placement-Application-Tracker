@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Student Placement Application Tracker</title>
+<style>
+  :root { --primary:#4f46e5; --bg:#f4f6fb; --card:#fff; --text:#1f2937; --muted:#6b7280; --border:#e5e7eb; }
+  * { box-sizing: border-box; }
+  body { margin:0; font-family:"Segoe UI",system-ui,sans-serif; background:var(--bg); color:var(--text); }
+  header { background:linear-gradient(135deg,#4f46e5,#7c3aed); color:#fff; padding:24px 32px; }
+  header h1 { margin:0; font-size:26px; }
+  header p { margin:6px 0 0; opacity:.85; }
+  .layout { display:grid; grid-template-columns:1fr 340px; gap:20px; padding:24px 32px; max-width:1350px; margin:auto; }
+  @media (max-width:950px) { .layout { grid-template-columns:1fr; } }
+  .stats { display:grid; grid-template-columns:repeat(4,1fr); gap:14px; margin-bottom:16px; }
+  @media (max-width:600px) { .stats { grid-template-columns:repeat(2,1fr); } }
+  .stat { background:var(--card); border-radius:12px; padding:14px 16px; border-left:5px solid var(--c);
+          box-shadow:0 1px 3px rgba(0,0,0,.07); }
+  .stat b { display:block; font-size:30px; color:var(--c); }
+  .stat span { color:var(--muted); font-size:13px; }
+  .panel { background:var(--card); border-radius:12px; padding:18px; box-shadow:0 1px 3px rgba(0,0,0,.07); }
+  .panel h3 { margin:0 0 12px; }
+  label { font-size:13px; color:var(--muted); }
+  input, select { width:100%; padding:10px 12px; border:1px solid var(--border); border-radius:8px;
+                  font-size:14px; margin:4px 0 10px; background:#fff; }
+  input:focus, select:focus { outline:2px solid #c7d2fe; border-color:var(--primary); }
+  button { width:100%; padding:11px; border:0; border-radius:8px; color:#fff; font-weight:600;
+           cursor:pointer; margin-bottom:8px; background:var(--primary); font-size:14px; }
+  button:hover { filter:brightness(1.1); }
+  .teal { background:#0e7490; } .amber { background:#d97706; } .red { background:#dc2626; }
+  hr { border:0; border-top:1px solid var(--border); margin:18px 0; }
+  table { width:100%; border-collapse:collapse; margin-top:12px; }
+  th { text-align:left; font-size:12px; text-transform:uppercase; color:var(--muted);
+       padding:10px; border-bottom:2px solid var(--border); }
+  td { padding:12px 10px; border-bottom:1px solid var(--border); font-size:14px; }
+  tr.row { cursor:pointer; } tr.row:hover { background:#f5f3ff; } tr.sel { background:#eef2ff; }
+  .badge { padding:3px 11px; border-radius:999px; font-size:12px; font-weight:600; }
+  .Applied { background:#e0e7ff; color:#4338ca; } .Interview { background:#fef3c7; color:#b45309; }
+  .Selected { background:#dcfce7; color:#15803d; } .Rejected { background:#fee2e2; color:#b91c1c; }
+  .empty { text-align:center; color:var(--muted); padding:34px; }
+  #picked { color:var(--muted); font-size:13px; margin-bottom:10px; }
+  #toast { position:fixed; bottom:24px; left:50%; transform:translateX(-50%); background:#111827; color:#fff;
+           padding:11px 20px; border-radius:8px; opacity:0; transition:opacity .3s; pointer-events:none; }
+  #toast.show { opacity:1; } #toast.err { background:#b91c1c; }
+</style>
+</head>
+<body>
+<header>
+  <h1>🎓 Student Placement Application Tracker</h1>
+  <p>Track applications, interviews and offers in one place</p>
+</header>
+
+<div class="layout">
+  <main>
+    <div class="stats">
+      <div class="stat" style="--c:#4f46e5"><b id="sTotal">0</b><span>Total Applications</span></div>
+      <div class="stat" style="--c:#d97706"><b id="sInterview">0</b><span>Interviews</span></div>
+      <div class="stat" style="--c:#16a34a"><b id="sSelected">0</b><span>Selected</span></div>
+      <div class="stat" style="--c:#dc2626"><b id="sRejected">0</b><span>Rejected</span></div>
+    </div>
+
+    <div class="panel">
+      <input id="search" placeholder="🔍 Search by company..." oninput="render()">
+      <table>
+        <thead>
+          <tr><th>ID</th><th>Company</th><th>Role</th><th>Applied</th><th>Status</th><th>Interview</th></tr>
+        </thead>
+        <tbody id="rows"></tbody>
+      </table>
+    </div>
+  </main>
+
+  <aside class="panel">
+    <h3>Add Application</h3>
+    <label>Company</label><input id="company">
+    <label>Role</label><input id="role">
+    <label>Applied Date</label><input id="appliedDate" type="date">
+    <button onclick="addApplication()">Add Application</button>
+
+    <hr>
+
+    <h3>Update Selected</h3>
+    <div id="picked">Click a row in the table to select it</div>
+    <label>Status</label>
+    <select id="status">
+      <option>Applied</option><option>Interview</option><option>Selected</option><option>Rejected</option>
+    </select>
+    <button class="teal" onclick="updateStatus()">Update Status</button>
+
+    <label>Interview Date</label><input id="interviewDate" type="date">
+    <button class="amber" onclick="updateInterview()">Set Interview Date</button>
+
+    <button class="red" onclick="deleteApplication()">Delete Application</button>
+  </aside>
+</div>
+
+<div id="toast"></div>
+
+<script>
+  const API = '/api/applications';
+  let apps = [];
+  let selectedId = null;
+
+  const $ = id => document.getElementById(id);
+  const esc = s => String(s).replace(/[&<>"']/g,
+      c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+  function toast(msg, isError) {
+    const t = $('toast');
+    t.textContent = msg;
+    t.className = 'show' + (isError ? ' err' : '');
+    setTimeout(() => t.className = '', 2500);
+  }
+
+  async function call(method, url, body) {
+    const res = await fetch(url, {
+      method,
+      headers: {'Content-Type': 'application/json'},
+      body: body ? JSON.stringify(body) : undefined
+    });
+    if (!res.ok) {
+      let msg = 'Request failed';
+      try { msg = (await res.json()).message || msg; } catch (e) {}
+      throw new Error(msg);
+    }
+    return res.status === 204 ? null : res.json();
+  }
+
+  async function load() {
+    apps = await call('GET', API);
+    render();
+  }
+
+  function render() {
+    const q = $('search').value.trim().toLowerCase();
+    const shown = apps.filter(a => a.company.toLowerCase().includes(q));
+
+    $('sTotal').textContent = apps.length;
+    $('sInterview').textContent = apps.filter(a => a.status === 'Interview').length;
+    $('sSelected').textContent = apps.filter(a => a.status === 'Selected').length;
+    $('sRejected').textContent = apps.filter(a => a.status === 'Rejected').length;
+
+    $('rows').innerHTML = shown.length ? shown.map(a => `
+      <tr class="row ${a.id === selectedId ? 'sel' : ''}" onclick="pick(${a.id})">
+        <td>${a.id}</td><td><b>${esc(a.company)}</b></td><td>${esc(a.role)}</td>
+        <td>${esc(a.applicationDate)}</td>
+        <td><span class="badge ${esc(a.status)}">${esc(a.status)}</span></td>
+        <td>${esc(a.interviewDate)}</td>
+      </tr>`).join('')
+      : '<tr><td colspan="6" class="empty">No applications yet. Add your first one →</td></tr>';
+  }
+
+  function pick(id) {
+    selectedId = id;
+    const a = apps.find(x => x.id === id);
+    $('picked').textContent = 'Selected: #' + a.id + ' - ' + a.company;
+    $('status').value = a.status;
+    $('interviewDate').value = /^\d{4}-\d{2}-\d{2}$/.test(a.interviewDate) ? a.interviewDate : '';
+    render();
+  }
+
+  function needSelection() {
+    if (selectedId === null) { toast('Select an application from the table first', true); return false; }
+    return true;
+  }
+
+  async function run(action, okMsg) {
+    try { await action(); await load(); toast(okMsg); }
+    catch (e) { toast(e.message, true); }
+  }
+
+  function addApplication() {
+    run(async () => {
+      await call('POST', API, {
+        company: $('company').value,
+        role: $('role').value,
+        applicationDate: $('appliedDate').value
+      });
+      $('company').value = ''; $('role').value = '';
+    }, 'Application added');
+  }
+
+  function updateStatus() {
+    if (!needSelection()) return;
+    run(() => call('PUT', `${API}/${selectedId}/status`, {status: $('status').value}), 'Status updated');
+  }
+
+  function updateInterview() {
+    if (!needSelection()) return;
+    run(() => call('PUT', `${API}/${selectedId}/interview`, {interviewDate: $('interviewDate').value}),
+        'Interview date saved');
+  }
+
+  function deleteApplication() {
+    if (!needSelection()) return;
+    if (!confirm('Delete application #' + selectedId + '?')) return;
+    run(async () => {
+      await call('DELETE', `${API}/${selectedId}`);
+      selectedId = null;
+      $('picked').textContent = 'Click a row in the table to select it';
+    }, 'Application deleted');
+  }
+
+  $('appliedDate').value = new Date().toISOString().slice(0, 10);
+  load().catch(e => toast(e.message, true));
+</script>
+</body>
+</html>

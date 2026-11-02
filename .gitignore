@@ -1,5 +1,4 @@
 target/
-applications.dat
-*.class
+*.dat
 .idea/
-.vscode/
+*.iml
